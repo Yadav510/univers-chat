@@ -1,327 +1,366 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { PhoneFrame } from "@/components/PhoneFrame";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/use-auth";
 import { Avatar } from "@/components/Avatar";
-import { CHATS, PINNED, type ChatPreview } from "@/lib/mock-data";
+import { formatChatTime } from "@/lib/format";
 
 export const Route = createFileRoute("/chats")({
-  head: () => ({ meta: [{ title: "Chats — Univers." }] }),
+  head: () => ({ meta: [{ title: "Messages — Univers." }] }),
   component: ChatsPage,
 });
 
+type ChatRow = {
+  chat_id: string;
+  is_group: boolean;
+  last_message_at: string;
+  other_user_id: string | null;
+  other_username: string | null;
+  other_display_name: string | null;
+  other_avatar_color: string | null;
+  other_last_seen_at: string | null;
+  last_message_body: string | null;
+  last_message_sender: string | null;
+  last_message_created_at: string | null;
+};
+
+const TABS = ["All", "Unread", "Pinned"] as const;
+type Tab = (typeof TABS)[number];
+
 function ChatsPage() {
-  const unreadCount = CHATS.reduce((n, c) => n + (c.unread > 0 ? 1 : 0), 0);
-  const encryptedCount = CHATS.length;
+  const navigate = useNavigate();
+  const { user, loading } = useAuth();
+  const queryClient = useQueryClient();
+  const [tab, setTab] = useState<Tab>("All");
+
+  // Redirect if not signed in
+  useEffect(() => {
+    if (!loading && !user) navigate({ to: "/", replace: true });
+  }, [loading, user, navigate]);
+
+  const { data: me } = useQuery({
+    enabled: !!user,
+    queryKey: ["me", user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, username, display_name, avatar_color")
+        .eq("id", user!.id)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: chats = [] } = useQuery({
+    enabled: !!user,
+    queryKey: ["my-chats", user?.id],
+    queryFn: async (): Promise<ChatRow[]> => {
+      const { data, error } = await supabase.rpc("list_my_chats");
+      if (error) throw error;
+      return (data ?? []) as ChatRow[];
+    },
+  });
+
+  // Realtime: refetch chat list whenever a new message hits any chat I'm in.
+  // RLS already restricts what comes back.
+  useEffect(() => {
+    if (!user) return;
+    const ch = supabase
+      .channel("home-chats")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["my-chats", user.id] });
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [user, queryClient]);
+
+  const filtered = useMemo(() => {
+    if (tab === "Unread") {
+      // We don't track unread server-side yet. Approximate: chats whose last message
+      // wasn't sent by me and was within the last 24 h.
+      return chats.filter(
+        (c) =>
+          c.last_message_sender &&
+          c.last_message_sender !== user?.id &&
+          c.last_message_created_at &&
+          Date.now() - new Date(c.last_message_created_at).getTime() <
+            24 * 60 * 60 * 1000,
+      );
+    }
+    if (tab === "Pinned") return [];
+    return chats;
+  }, [chats, tab, user?.id]);
+
+  const tabCounts: Record<Tab, number> = {
+    All: chats.length,
+    Unread: chats.filter(
+      (c) =>
+        c.last_message_sender &&
+        c.last_message_sender !== user?.id &&
+        c.last_message_created_at &&
+        Date.now() - new Date(c.last_message_created_at).getTime() <
+          24 * 60 * 60 * 1000,
+    ).length,
+    Pinned: 0,
+  };
 
   return (
-    <PhoneFrame>
-      {/* Header */}
-      <header className="px-4 pt-4 pb-3">
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="wordmark text-[30px] text-foreground">
-              Univers<span className="text-primary">.</span>
-            </h1>
-            <p className="mt-1 text-[12px] text-text-tertiary">
-              {encryptedCount} encrypted conversations
-              {unreadCount > 0 ? ` · ${unreadCount} unread` : ""}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <IconBtn label="Search">
-              <SearchIcon />
-            </IconBtn>
-            <IconBtn label="Compose">
-              <ComposeIcon />
-            </IconBtn>
-          </div>
-        </div>
-      </header>
-
-      {/* Pinned */}
-      <section className="pt-2">
-        <SectionLabel className="px-4">Pinned</SectionLabel>
-        <div className="no-scrollbar mt-2 flex gap-2 overflow-x-auto px-4 pb-1">
-          {PINNED.map((p) => (
-            <div
-              key={p.id}
-              className="press flex w-[88px] shrink-0 flex-col items-center gap-2 rounded-[20px] border bg-accent/40 px-2 py-3"
-              style={{
-                borderColor: "color-mix(in oklab, var(--primary) 25%, transparent)",
-              }}
-            >
-              <Avatar
-                initials={p.initials}
-                color={p.color}
-                size={44}
-                radius={14}
-                online={p.online}
-              />
-              <span className="truncate w-full text-center text-[11px] font-medium text-text-secondary">
-                {p.name}
-              </span>
+    <div className="min-h-dvh w-full bg-background flex justify-center">
+      <div
+        className="relative w-full max-w-[420px] min-h-dvh flex flex-col"
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
+      >
+        {/* ====== Dark green header ====== */}
+        <header className="px-5 pt-4 pb-5 text-foreground">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2.5">
+                <h1 className="wordmark text-[34px] truncate">Messages</h1>
+                <span className="inline-flex h-7 items-center justify-center rounded-full bg-primary px-2.5 text-[12px] font-bold text-primary-foreground">
+                  {chats.length}
+                </span>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <IconBtn label="Search">
+                  <SearchIcon />
+                </IconBtn>
+                <Link
+                  to="/new-chat"
+                  className="press flex h-9 w-9 items-center justify-center rounded-full bg-white/10"
+                  aria-label="New chat"
+                >
+                  <ProfileAddIcon />
+                </Link>
+              </div>
             </div>
-          ))}
-        </div>
-      </section>
+            <Link
+              to="/me"
+              aria-label="Your profile"
+              className="press shrink-0"
+            >
+              {me ? (
+                <Avatar
+                  name={me.display_name}
+                  color={me.avatar_color}
+                  size={42}
+                  ring="mint"
+                />
+              ) : (
+                <div className="h-[42px] w-[42px] rounded-full bg-white/10" />
+              )}
+            </Link>
+          </div>
 
-      {/* Recent */}
-      <section className="mt-5 flex-1 flex flex-col">
-        <SectionLabel className="px-4">Recent</SectionLabel>
-        <ul className="mt-1 flex-1 overflow-y-auto">
-          {CHATS.map((chat) => (
-            <ChatRow key={chat.id} chat={chat} />
-          ))}
-          <li className="py-6 text-center text-[11px] text-text-tertiary flex items-center justify-center gap-1.5">
-            <LockMini /> all chats end-to-end encrypted
-          </li>
-        </ul>
-      </section>
+          {/* Stories row — placeholder when no chats yet */}
+          <div className="no-scrollbar mt-5 flex gap-3 overflow-x-auto pb-1">
+            <StoryItem
+              label="You"
+              color={me?.avatar_color ?? "#2DE682"}
+              name={me?.display_name ?? "You"}
+              onClick={() => navigate({ to: "/me" })}
+              isMe
+            />
+            {chats.slice(0, 8).map((c) =>
+              c.other_user_id && c.other_display_name && c.other_avatar_color ? (
+                <StoryItem
+                  key={c.other_user_id}
+                  label={c.other_display_name.split(" ")[0]}
+                  color={c.other_avatar_color}
+                  name={c.other_display_name}
+                  onClick={() =>
+                    navigate({
+                      to: "/chat/$chatId",
+                      params: { chatId: c.chat_id },
+                    })
+                  }
+                />
+              ) : null,
+            )}
+          </div>
+        </header>
 
-      {/* FAB */}
-      <button
-        className="press absolute right-5 bottom-24 z-10 grid h-[56px] w-[56px] place-items-center rounded-[20px] bg-primary text-primary-foreground glow-violet"
-        aria-label="New message"
-      >
-        <PencilPlusIcon />
-      </button>
+        {/* ====== Cream chat panel ====== */}
+        <section
+          className="flex flex-1 flex-col rounded-t-[28px] bg-panel text-panel-foreground"
+          style={{ boxShadow: "var(--shadow-panel)" }}
+        >
+          {/* Tabs */}
+          <div className="no-scrollbar flex gap-2 overflow-x-auto px-5 pt-5 pb-3">
+            {TABS.map((t) => {
+              const active = t === tab;
+              return (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={`press flex h-9 items-center gap-1.5 rounded-full px-3.5 text-[13px] font-semibold transition ${
+                    active
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-black/5 text-panel-foreground/70"
+                  }`}
+                >
+                  <span>{t}</span>
+                  <span
+                    className={`text-[11px] font-bold ${
+                      active ? "text-primary-foreground/70" : "text-panel-foreground/40"
+                    }`}
+                  >
+                    {tabCounts[t]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
 
-      {/* Bottom Tab Bar */}
-      <nav
-        className="hairline-t mt-auto flex items-center justify-around bg-background/95 backdrop-blur-xl px-2"
-        style={{ paddingBottom: "max(env(safe-area-inset-bottom), 8px)" }}
-      >
-        <TabItem active label="Chats" icon={<ChatIcon />} />
-        <TabItem label="Calls" icon={<PhoneIcon />} />
-        <TabItem label="Tools" icon={<ToolsIcon />} />
-        <TabItem label="You" icon={<UserIcon />} />
-      </nav>
-    </PhoneFrame>
+          {/* Chat list */}
+          <ul className="flex-1 overflow-y-auto pb-24">
+            {filtered.length === 0 ? (
+              <EmptyState tab={tab} />
+            ) : (
+              filtered.map((c) => <ChatRowItem key={c.chat_id} chat={c} meId={user?.id} />)
+            )}
+          </ul>
+        </section>
+
+        {/* FAB */}
+        <Link
+          to="/new-chat"
+          aria-label="New conversation"
+          className="press absolute bottom-6 right-5 z-10 grid h-14 w-14 place-items-center rounded-full bg-primary text-primary-foreground glow-mint"
+          style={{ marginBottom: "env(safe-area-inset-bottom)" }}
+        >
+          <ComposeIcon />
+        </Link>
+      </div>
+    </div>
   );
 }
 
-/* ---------------- Row ---------------- */
+/* ============== Sub-components ============== */
 
-function ChatRow({ chat }: { chat: ChatPreview }) {
-  const { contact, lastMessage, time, unread, isTyping, lastMessageKind } = chat;
+function StoryItem({
+  label,
+  color,
+  name,
+  onClick,
+  isMe = false,
+}: {
+  label: string;
+  color: string;
+  name: string;
+  onClick: () => void;
+  isMe?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="press flex w-[64px] shrink-0 flex-col items-center gap-1.5"
+    >
+      <span className="rounded-full p-[2.5px] ring-2 ring-primary">
+        <Avatar name={name} color={color} size={52} />
+      </span>
+      <span className="truncate w-full text-center text-[10.5px] text-foreground/85">
+        {isMe ? "You" : label}
+      </span>
+    </button>
+  );
+}
+
+function ChatRowItem({ chat, meId }: { chat: ChatRow; meId?: string }) {
+  const name = chat.other_display_name ?? "Unknown";
+  const color = chat.other_avatar_color ?? "#2DE682";
+  const preview = chat.last_message_body ?? "Say hi 👋";
+  const sentByMe = chat.last_message_sender && chat.last_message_sender === meId;
+  const time = formatChatTime(chat.last_message_created_at ?? chat.last_message_at);
 
   return (
     <li className="hairline-b">
-      <button className="press flex w-full items-center gap-3 px-4 py-3 text-left">
-        <Avatar
-          initials={contact.initials}
-          color={contact.color}
-          size={48}
-          radius={16}
-          online={contact.online}
-        />
+      <Link
+        to="/chat/$chatId"
+        params={{ chatId: chat.chat_id }}
+        className="press flex w-full items-center gap-3 px-5 py-3.5"
+      >
+        <Avatar name={name} color={color} size={50} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <span className="truncate text-[14.5px] font-semibold text-foreground tracking-tight">
-              {contact.name}
+            <span className="truncate text-[15px] font-semibold text-panel-foreground">
+              {name}
             </span>
-            <span className="shrink-0 text-[11px] text-text-tertiary">{time}</span>
+            <span className="shrink-0 text-[11px] text-panel-foreground/45">{time}</span>
           </div>
           <div className="mt-0.5 flex items-center justify-between gap-2">
-            <span
-              className={`truncate text-[13px] ${
-                isTyping
-                  ? "text-primary-soft italic"
-                  : lastMessageKind === "missed-call"
-                    ? "text-destructive"
-                    : "text-text-secondary"
-              } flex items-center gap-1.5`}
-            >
-              {lastMessageKind === "voice" && <MicMini />}
-              {lastMessageKind === "file" && <ClipMini />}
-              {lastMessageKind === "missed-call" && <MissedCallMini />}
-              {lastMessage}
+            <span className="truncate text-[13px] text-panel-foreground/55">
+              {sentByMe ? "You: " : ""}
+              {preview}
             </span>
-            {unread > 0 ? (
-              <span className="grid min-w-[20px] h-[20px] place-items-center rounded-[7px] bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
-                {unread}
-              </span>
+            {!sentByMe && chat.last_message_body ? (
+              <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-hidden />
             ) : null}
           </div>
         </div>
-      </button>
+      </Link>
     </li>
   );
 }
 
-/* ---------------- Reusable bits ---------------- */
-
-function SectionLabel({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
+function EmptyState({ tab }: { tab: Tab }) {
   return (
-    <span
-      className={`text-[11px] font-medium uppercase tracking-[0.16em] text-text-tertiary ${className}`}
-    >
-      {children}
-    </span>
+    <div className="flex flex-col items-center justify-center px-8 py-16 text-center">
+      <div className="grid h-16 w-16 place-items-center rounded-2xl bg-primary/15 text-primary">
+        <ComposeIcon />
+      </div>
+      <h3 className="mt-4 text-[16px] font-semibold text-panel-foreground">
+        {tab === "All" ? "No conversations yet" : `No ${tab.toLowerCase()} chats`}
+      </h3>
+      <p className="mt-1.5 max-w-[260px] text-[13px] text-panel-foreground/55">
+        {tab === "All"
+          ? "Tap the green button to find someone by username and start chatting."
+          : "Conversations matching this filter will appear here."}
+      </p>
+    </div>
   );
 }
 
-function IconBtn({
-  children,
-  label,
-}: {
-  children: React.ReactNode;
-  label: string;
-}) {
+function IconBtn({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <button
       aria-label={label}
-      className="press grid h-9 w-9 place-items-center rounded-xl bg-white/[0.05] text-foreground hover:bg-white/[0.08] transition"
+      className="press flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-foreground"
     >
       {children}
     </button>
   );
 }
 
-function TabItem({
-  label,
-  icon,
-  active = false,
-}: {
-  label: string;
-  icon: React.ReactNode;
-  active?: boolean;
-}) {
-  return (
-    <button
-      className={`press flex flex-1 flex-col items-center gap-1 py-2.5 ${
-        active ? "text-primary" : "text-white/25"
-      }`}
-    >
-      <span className="grid h-6 w-6 place-items-center">{icon}</span>
-      <span className="text-[10px] font-medium tracking-tight">{label}</span>
-    </button>
-  );
-}
-
-/* ---------------- Icons (inline SVG) ---------------- */
-
+/* ============== Icons ============== */
 function SearchIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-      <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M16 16l4 4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M16 16l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+function ProfileAddIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+      <circle cx="10" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M3 19c1.2-3.5 4-5 7-5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M18 13v6M15 16h6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   );
 }
 function ComposeIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M4 20h4l10-10-4-4L4 16v4z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-      <path d="M14 6l4 4" stroke="currentColor" strokeWidth="1.7" />
-    </svg>
-  );
-}
-function PencilPlusIcon() {
-  return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M4 20h4l10-10-4-4L4 16v4z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-function ChatIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M5 5h14a1 1 0 011 1v9a1 1 0 01-1 1h-7l-4 3v-3H5a1 1 0 01-1-1V6a1 1 0 011-1z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-function PhoneIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M5 4h3l2 5-2 1a11 11 0 005 5l1-2 5 2v3a2 2 0 01-2 2A15 15 0 013 6a2 2 0 012-2z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-function ToolsIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M14 4l6 6-3 3-3-3-6 6-3-3 6-6-3-3 3-3 3 3z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-function UserIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.7" />
-      <path
-        d="M4 20c1.5-4 5-5 8-5s6.5 1 8 5"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-function LockMini() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
-      <rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" strokeWidth="2" />
-      <path d="M8 11V8a4 4 0 018 0v3" stroke="currentColor" strokeWidth="2" />
-    </svg>
-  );
-}
-function MicMini() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-      <rect x="9" y="3" width="6" height="12" rx="3" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M5 11a7 7 0 0014 0M12 18v3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-function ClipMini() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M21 11l-8.5 8.5a5 5 0 11-7-7L14 4a3.5 3.5 0 015 5l-8.5 8.5a2 2 0 11-3-3L15 7"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-function MissedCallMini() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-      <path d="M16 8l-5 5-3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M3 17a18 18 0 0118 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M4 20h4l10-10-4-4L4 16v4z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
     </svg>
   );
 }
