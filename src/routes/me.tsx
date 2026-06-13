@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/use-auth";
 import { Avatar } from "@/components/Avatar";
+import { AppTabBar } from "@/components/AppTabBar";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/me")({
@@ -82,20 +83,12 @@ function MePage() {
         </div>
 
         {/* Cream panel with settings */}
-        <section className="flex-1 rounded-t-[28px] bg-panel text-panel-foreground" style={{ boxShadow: "var(--shadow-panel)" }}>
+        <section className="flex flex-1 flex-col rounded-t-[28px] bg-panel text-panel-foreground" style={{ boxShadow: "var(--shadow-panel)" }}>
           <div className="px-5 py-5">
             <SectionLabel>Account</SectionLabel>
             <SettingsCard>
               <Row label="Email" value={user?.email ?? "—"} />
               <Row label="Member since" value={profile?.created_at ? new Date(profile.created_at).toLocaleDateString() : "—"} />
-            </SettingsCard>
-
-            <SectionLabel className="mt-6">Coming soon</SectionLabel>
-            <SettingsCard>
-              <DisabledRow>Edit profile & avatar</DisabledRow>
-              <DisabledRow>Privacy (Ghost Mode, disappearing)</DisabledRow>
-              <DisabledRow>Notifications</DisabledRow>
-              <DisabledRow>Appearance</DisabledRow>
             </SettingsCard>
 
             <button
@@ -108,6 +101,9 @@ function MePage() {
             <p className="mt-5 text-center text-[11px] text-panel-foreground/45">
               Univers. · Private messaging
             </p>
+          </div>
+          <div className="mt-auto">
+            <AppTabBar active="me" />
           </div>
         </section>
       </div>
@@ -140,11 +136,3 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function DisabledRow({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="hairline-b flex items-center justify-between px-4 py-3.5 last:border-b-0">
-      <span className="text-[13.5px] text-panel-foreground/55">{children}</span>
-      <span className="text-[11px] font-semibold uppercase tracking-wider text-primary-deep">soon</span>
-    </div>
-  );
-}

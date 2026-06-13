@@ -26,14 +26,10 @@ type ChatRow = {
   last_message_created_at: string | null;
 };
 
-const TABS = ["All", "Unread", "Pinned"] as const;
-type Tab = (typeof TABS)[number];
-
 function ChatsPage() {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<Tab>("All");
   const [search, setSearch] = useState("");
 
   // Redirect if not signed in
@@ -86,34 +82,8 @@ function ChatsPage() {
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (tab === "Unread") {
-      // We don't track unread server-side yet. Approximate: chats whose last message
-      // wasn't sent by me and was within the last 24 h.
-      return chats.filter(
-        (c) =>
-          c.last_message_sender &&
-          c.last_message_sender !== user?.id &&
-          c.last_message_created_at &&
-          Date.now() - new Date(c.last_message_created_at).getTime() <
-            24 * 60 * 60 * 1000,
-      ).filter((c) => matchesSearch(c, term));
-    }
-    if (tab === "Pinned") return [];
     return chats.filter((c) => matchesSearch(c, term));
-  }, [chats, search, tab, user?.id]);
-
-  const tabCounts: Record<Tab, number> = {
-    All: chats.length,
-    Unread: chats.filter(
-      (c) =>
-        c.last_message_sender &&
-        c.last_message_sender !== user?.id &&
-        c.last_message_created_at &&
-        Date.now() - new Date(c.last_message_created_at).getTime() <
-          24 * 60 * 60 * 1000,
-    ).length,
-    Pinned: 0,
-  };
+  }, [chats, search]);
 
   return (
     <div className="min-h-dvh w-full bg-background flex justify-center">
@@ -194,37 +164,14 @@ function ChatsPage() {
           className="flex flex-1 flex-col rounded-t-[28px] bg-panel text-panel-foreground"
           style={{ boxShadow: "var(--shadow-panel)" }}
         >
-          {/* Tabs */}
-          <div className="no-scrollbar flex gap-2 overflow-x-auto px-5 pt-5 pb-3">
-            {TABS.map((t) => {
-              const active = t === tab;
-              return (
-                <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  className={`press flex h-9 items-center gap-1.5 rounded-full px-3.5 text-[13px] font-semibold transition ${
-                    active
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-black/5 text-panel-foreground/70"
-                  }`}
-                >
-                  <span>{t}</span>
-                  <span
-                    className={`text-[11px] font-bold ${
-                      active ? "text-primary-foreground/70" : "text-panel-foreground/40"
-                    }`}
-                  >
-                    {tabCounts[t]}
-                  </span>
-                </button>
-              );
-            })}
+          <div className="px-5 pt-5 pb-3 text-[13px] font-semibold text-panel-foreground/55">
+            {search.trim() ? `${filtered.length} result${filtered.length === 1 ? "" : "s"}` : "All conversations"}
           </div>
 
           {/* Chat list */}
           <ul className="flex-1 overflow-y-auto pb-2">
             {filtered.length === 0 ? (
-              <EmptyState tab={tab} searching={search.trim().length > 0} />
+              <EmptyState searching={search.trim().length > 0} />
             ) : (
               filtered.map((c) => <ChatRowItem key={c.chat_id} chat={c} meId={user?.id} />)
             )}
