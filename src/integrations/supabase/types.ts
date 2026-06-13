@@ -137,6 +137,25 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_my_profile: {
+        Args: never
+        Returns: {
+          avatar_color: string
+          bio: string | null
+          created_at: string
+          display_name: string
+          id: string
+          last_seen_at: string
+          public_key: string | null
+          username: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "profiles"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       get_or_create_direct_chat: {
         Args: { _other_user_id: string }
         Returns: string
