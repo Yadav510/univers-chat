@@ -44,7 +44,7 @@ type Member = {
   display_name: string;
   username: string;
   avatar_color: string;
-  last_seen_at: string;
+  last_seen_at: string | null;
   public_key: string | null;
 };
 
