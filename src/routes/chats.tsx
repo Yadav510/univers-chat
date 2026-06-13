@@ -136,8 +136,8 @@ function ChatsPage() {
   // Realtime: refetch chat list + fire notifications when a message hits
   // a chat I'm in (RLS already filters this to me).
   // Use refs for chats/privateKey so we don't resubscribe on every refetch.
-  const chatsRef = useRef(chats);
-  const keyRef = useRef(privateKey);
+  const chatsRef = useRef<ChatRow[]>(chats);
+  const keyRef = useRef<CryptoKey | null>(privateKey);
   useEffect(() => { chatsRef.current = chats; }, [chats]);
   useEffect(() => { keyRef.current = privateKey; }, [privateKey]);
 
