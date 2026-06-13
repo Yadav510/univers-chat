@@ -1,0 +1,1 @@
+GRANT EXECUTE ON FUNCTION public.is_chat_member(uuid, uuid) TO authenticated;
