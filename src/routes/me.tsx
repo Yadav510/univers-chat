@@ -24,11 +24,7 @@ function MePage() {
     enabled: !!user,
     queryKey: ["me-profile", user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, username, display_name, bio, avatar_color, created_at")
-        .eq("id", user!.id)
-        .single();
+      const { data, error } = await supabase.rpc("get_my_profile");
       if (error) throw error;
       return data;
     },
