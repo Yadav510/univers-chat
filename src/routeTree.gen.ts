@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as ProfileSetupRouteImport } from './routes/profile-setup'
+import { Route as ChatsRouteImport } from './routes/chats'
 import { Route as IndexRouteImport } from './routes/index'
 
 const SignupRoute = SignupRouteImport.update({
@@ -23,6 +24,11 @@ const ProfileSetupRoute = ProfileSetupRouteImport.update({
   path: '/profile-setup',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChatsRoute = ChatsRouteImport.update({
+  id: '/chats',
+  path: '/chats',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -31,30 +37,34 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/chats': typeof ChatsRoute
   '/profile-setup': typeof ProfileSetupRoute
   '/signup': typeof SignupRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/chats': typeof ChatsRoute
   '/profile-setup': typeof ProfileSetupRoute
   '/signup': typeof SignupRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/chats': typeof ChatsRoute
   '/profile-setup': typeof ProfileSetupRoute
   '/signup': typeof SignupRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/profile-setup' | '/signup'
+  fullPaths: '/' | '/chats' | '/profile-setup' | '/signup'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/profile-setup' | '/signup'
-  id: '__root__' | '/' | '/profile-setup' | '/signup'
+  to: '/' | '/chats' | '/profile-setup' | '/signup'
+  id: '__root__' | '/' | '/chats' | '/profile-setup' | '/signup'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ChatsRoute: typeof ChatsRoute
   ProfileSetupRoute: typeof ProfileSetupRoute
   SignupRoute: typeof SignupRoute
 }
@@ -75,6 +85,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProfileSetupRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/chats': {
+      id: '/chats'
+      path: '/chats'
+      fullPath: '/chats'
+      preLoaderRoute: typeof ChatsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -87,6 +104,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ChatsRoute: ChatsRoute,
   ProfileSetupRoute: ProfileSetupRoute,
   SignupRoute: SignupRoute,
 }
