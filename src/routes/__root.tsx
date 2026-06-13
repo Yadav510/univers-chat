@@ -89,13 +89,19 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         content:
           "Univers. is a premium private messenger. End-to-end encrypted. Zero data sold.",
       },
-      { property: "og:title", content: "Univers. — Private messaging" },
+      { property: "og:title", content: "Univers. — Private. Powerful. Yours." },
       {
         property: "og:description",
         content: "Private. Powerful. Yours.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
+      { name: "twitter:title", content: "Univers. — Private. Powerful. Yours." },
+      { name: "description", content: "Univers Chat is a premium private messaging app offering secure, end-to-end encrypted communication." },
+      { property: "og:description", content: "Univers Chat is a premium private messaging app offering secure, end-to-end encrypted communication." },
+      { name: "twitter:description", content: "Univers Chat is a premium private messaging app offering secure, end-to-end encrypted communication." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/3d89fdab-a4df-4e11-ad6a-de577a2fcd9c/id-preview-5c1c515c--4d55bbf6-4754-4cb9-8edf-14d69a565fdd.lovable.app-1781352061271.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/3d89fdab-a4df-4e11-ad6a-de577a2fcd9c/id-preview-5c1c515c--4d55bbf6-4754-4cb9-8edf-14d69a565fdd.lovable.app-1781352061271.png" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
