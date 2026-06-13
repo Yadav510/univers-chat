@@ -76,7 +76,7 @@ function ChatPage() {
       if (!otherId) return null;
       const { data: prof, error: pErr } = await supabase
         .from("profiles")
-        .select("id, display_name, username, avatar_color, last_seen_at, public_key")
+        .select("id, display_name, username, avatar_color, public_key")
         .eq("id", otherId)
         .single();
       if (pErr) throw pErr;
@@ -85,7 +85,7 @@ function ChatPage() {
         display_name: prof.display_name,
         username: prof.username,
         avatar_color: prof.avatar_color,
-        last_seen_at: prof.last_seen_at,
+        last_seen_at: null,
         public_key: prof.public_key,
       };
     },
