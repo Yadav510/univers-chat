@@ -7,6 +7,7 @@ import { Avatar } from "@/components/Avatar";
 import { AppTabBar } from "@/components/AppTabBar";
 import { formatChatTime } from "@/lib/format";
 import { useEnsureKeypair } from "@/lib/use-keypair";
+import { registerPushForUser } from "@/lib/push";
 import {
   decryptText,
   deriveSharedKey,
