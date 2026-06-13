@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/use-auth";
 import { Avatar } from "@/components/Avatar";
+import { AppTabBar } from "@/components/AppTabBar";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/new-chat")({
@@ -130,6 +131,8 @@ function NewChatPage() {
             </ul>
           )}
         </div>
+
+        <AppTabBar active="new" />
       </div>
     </div>
   );

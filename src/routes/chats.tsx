@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/use-auth";
 import { Avatar } from "@/components/Avatar";
+import { AppTabBar } from "@/components/AppTabBar";
 import { formatChatTime } from "@/lib/format";
 
 export const Route = createFileRoute("/chats")({
@@ -25,14 +26,11 @@ type ChatRow = {
   last_message_created_at: string | null;
 };
 
-const TABS = ["All", "Unread", "Pinned"] as const;
-type Tab = (typeof TABS)[number];
-
 function ChatsPage() {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<Tab>("All");
+  const [search, setSearch] = useState("");
 
   // Redirect if not signed in
   useEffect(() => {
@@ -83,34 +81,9 @@ function ChatsPage() {
   }, [user, queryClient]);
 
   const filtered = useMemo(() => {
-    if (tab === "Unread") {
-      // We don't track unread server-side yet. Approximate: chats whose last message
-      // wasn't sent by me and was within the last 24 h.
-      return chats.filter(
-        (c) =>
-          c.last_message_sender &&
-          c.last_message_sender !== user?.id &&
-          c.last_message_created_at &&
-          Date.now() - new Date(c.last_message_created_at).getTime() <
-            24 * 60 * 60 * 1000,
-      );
-    }
-    if (tab === "Pinned") return [];
-    return chats;
-  }, [chats, tab, user?.id]);
-
-  const tabCounts: Record<Tab, number> = {
-    All: chats.length,
-    Unread: chats.filter(
-      (c) =>
-        c.last_message_sender &&
-        c.last_message_sender !== user?.id &&
-        c.last_message_created_at &&
-        Date.now() - new Date(c.last_message_created_at).getTime() <
-          24 * 60 * 60 * 1000,
-    ).length,
-    Pinned: 0,
-  };
+    const term = search.trim().toLowerCase();
+    return chats.filter((c) => matchesSearch(c, term));
+  }, [chats, search]);
 
   return (
     <div className="min-h-dvh w-full bg-background flex justify-center">
@@ -128,18 +101,17 @@ function ChatsPage() {
                   {chats.length}
                 </span>
               </div>
-              <div className="mt-3 flex items-center gap-2">
-                <IconBtn label="Search">
+              <label className="mt-3 flex h-10 max-w-[260px] items-center gap-2 rounded-full bg-white/10 px-3.5 text-foreground">
+                <span className="shrink-0 text-foreground/70">
                   <SearchIcon />
-                </IconBtn>
-                <Link
-                  to="/new-chat"
-                  className="press flex h-9 w-9 items-center justify-center rounded-full bg-white/10"
-                  aria-label="New chat"
-                >
-                  <ProfileAddIcon />
-                </Link>
-              </div>
+                </span>
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search chats"
+                  className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground placeholder:text-foreground/45 focus:outline-none"
+                />
+              </label>
             </div>
             <Link
               to="/me"
@@ -192,52 +164,21 @@ function ChatsPage() {
           className="flex flex-1 flex-col rounded-t-[28px] bg-panel text-panel-foreground"
           style={{ boxShadow: "var(--shadow-panel)" }}
         >
-          {/* Tabs */}
-          <div className="no-scrollbar flex gap-2 overflow-x-auto px-5 pt-5 pb-3">
-            {TABS.map((t) => {
-              const active = t === tab;
-              return (
-                <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  className={`press flex h-9 items-center gap-1.5 rounded-full px-3.5 text-[13px] font-semibold transition ${
-                    active
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-black/5 text-panel-foreground/70"
-                  }`}
-                >
-                  <span>{t}</span>
-                  <span
-                    className={`text-[11px] font-bold ${
-                      active ? "text-primary-foreground/70" : "text-panel-foreground/40"
-                    }`}
-                  >
-                    {tabCounts[t]}
-                  </span>
-                </button>
-              );
-            })}
+          <div className="px-5 pt-5 pb-3 text-[13px] font-semibold text-panel-foreground/55">
+            {search.trim() ? `${filtered.length} result${filtered.length === 1 ? "" : "s"}` : "All conversations"}
           </div>
 
           {/* Chat list */}
-          <ul className="flex-1 overflow-y-auto pb-24">
+          <ul className="flex-1 overflow-y-auto pb-2">
             {filtered.length === 0 ? (
-              <EmptyState tab={tab} />
+              <EmptyState searching={search.trim().length > 0} />
             ) : (
               filtered.map((c) => <ChatRowItem key={c.chat_id} chat={c} meId={user?.id} />)
             )}
           </ul>
-        </section>
 
-        {/* FAB */}
-        <Link
-          to="/new-chat"
-          aria-label="New conversation"
-          className="press absolute bottom-6 right-5 z-10 grid h-14 w-14 place-items-center rounded-full bg-primary text-primary-foreground glow-mint"
-          style={{ marginBottom: "env(safe-area-inset-bottom)" }}
-        >
-          <ComposeIcon />
-        </Link>
+          <AppTabBar active="chats" />
+        </section>
       </div>
     </div>
   );
@@ -310,32 +251,32 @@ function ChatRowItem({ chat, meId }: { chat: ChatRow; meId?: string }) {
   );
 }
 
-function EmptyState({ tab }: { tab: Tab }) {
+function matchesSearch(chat: ChatRow, term: string) {
+  if (!term) return true;
+  return [
+    chat.other_display_name,
+    chat.other_username,
+    chat.last_message_body,
+  ]
+    .filter(Boolean)
+    .some((value) => value!.toLowerCase().includes(term));
+}
+
+function EmptyState({ searching }: { searching: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center px-8 py-16 text-center">
       <div className="grid h-16 w-16 place-items-center rounded-2xl bg-primary/15 text-primary">
         <ComposeIcon />
       </div>
       <h3 className="mt-4 text-[16px] font-semibold text-panel-foreground">
-        {tab === "All" ? "No conversations yet" : `No ${tab.toLowerCase()} chats`}
+        {searching ? "No matching chats" : "No conversations yet"}
       </h3>
       <p className="mt-1.5 max-w-[260px] text-[13px] text-panel-foreground/55">
-        {tab === "All"
-          ? "Tap the green button to find someone by username and start chatting."
-          : "Conversations matching this filter will appear here."}
+        {searching
+          ? "Try another name, username, or message."
+          : "Tap New to find someone by username and start chatting."}
       </p>
     </div>
-  );
-}
-
-function IconBtn({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <button
-      aria-label={label}
-      className="press flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-foreground"
-    >
-      {children}
-    </button>
   );
 }
 
@@ -345,15 +286,6 @@ function SearchIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
       <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.8" />
       <path d="M16 16l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-function ProfileAddIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-      <circle cx="10" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M3 19c1.2-3.5 4-5 7-5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-      <path d="M18 13v6M15 16h6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   );
 }
