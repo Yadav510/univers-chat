@@ -55,6 +55,12 @@ function ChatsPage() {
     if (!loading && !user) navigate({ to: "/", replace: true });
   }, [loading, user, navigate]);
 
+  // Register push token on Android (no-op in browser)
+  useEffect(() => {
+    if (user) void registerPushForUser(user.id);
+  }, [user]);
+
+
   // Heartbeat presence — refresh last_seen_at every 30s.
   useEffect(() => {
     if (!user) return;
