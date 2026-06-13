@@ -135,3 +135,74 @@ export async function decryptText(
 function toBuf(u: Uint8Array): ArrayBuffer {
   return u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength) as ArrayBuffer;
 }
+
+/* --------------------------- file encryption ----------------------------- */
+
+export async function generateFileKey(): Promise<CryptoKey> {
+  return await crypto.subtle.generateKey(
+    { name: "AES-GCM", length: 256 },
+    true,
+    ["encrypt", "decrypt"],
+  );
+}
+
+export async function encryptBytes(
+  key: CryptoKey,
+  bytes: ArrayBuffer,
+): Promise<{ ciphertext: ArrayBuffer; nonce: string }> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: toBuf(iv) },
+    key,
+    bytes,
+  );
+  return { ciphertext: ct, nonce: b64encode(iv) };
+}
+
+export async function decryptBytes(
+  key: CryptoKey,
+  ciphertext: ArrayBuffer,
+  nonce: string,
+): Promise<ArrayBuffer> {
+  const iv = b64decode(nonce);
+  return await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: toBuf(iv) },
+    key,
+    ciphertext,
+  );
+}
+
+export async function wrapFileKey(
+  sharedKey: CryptoKey,
+  fileKey: CryptoKey,
+): Promise<{ ciphertext: string; nonce: string }> {
+  const raw = await crypto.subtle.exportKey("raw", fileKey);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: toBuf(iv) },
+    sharedKey,
+    raw,
+  );
+  return { ciphertext: b64encode(ct), nonce: b64encode(iv) };
+}
+
+export async function unwrapFileKey(
+  sharedKey: CryptoKey,
+  ciphertext: string,
+  nonce: string,
+): Promise<CryptoKey> {
+  const iv = b64decode(nonce);
+  const ct = b64decode(ciphertext);
+  const raw = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: toBuf(iv) },
+    sharedKey,
+    toBuf(ct),
+  );
+  return await crypto.subtle.importKey(
+    "raw",
+    raw,
+    { name: "AES-GCM", length: 256 },
+    true,
+    ["encrypt", "decrypt"],
+  );
+}
