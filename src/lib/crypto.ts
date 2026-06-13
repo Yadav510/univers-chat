@@ -49,7 +49,7 @@ export async function importPublicKey(b64: string): Promise<CryptoKey> {
   const spki = b64decode(b64);
   return await crypto.subtle.importKey(
     "spki",
-    spki,
+    spki.buffer.slice(spki.byteOffset, spki.byteOffset + spki.byteLength) as ArrayBuffer,
     { name: "ECDH", namedCurve: "P-256" },
     true,
     [],
