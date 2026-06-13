@@ -135,6 +135,12 @@ function ChatsPage() {
 
   // Realtime: refetch chat list + fire notifications when a message hits
   // a chat I'm in (RLS already filters this to me).
+  // Use refs for chats/privateKey so we don't resubscribe on every refetch.
+  const chatsRef = useRef(chats);
+  const keyRef = useRef(privateKey);
+  useEffect(() => { chatsRef.current = chats; }, [chats]);
+  useEffect(() => { keyRef.current = privateKey; }, [privateKey]);
+
   useEffect(() => {
     if (!user) return;
     const ch = supabase
@@ -145,40 +151,30 @@ function ChatsPage() {
         async (payload) => {
           queryClient.invalidateQueries({ queryKey: ["my-chats", user.id] });
           const msg = payload.new as {
-            chat_id: string;
-            sender_id: string;
-            body: string | null;
-            ciphertext: string | null;
-            nonce: string | null;
+            chat_id: string; sender_id: string; body: string | null;
+            ciphertext: string | null; nonce: string | null;
           };
           if (msg.sender_id === user.id) return;
-
-          // Find sender info from the current chat list.
-          const chat = chats.find((c) => c.chat_id === msg.chat_id);
+          const chat = chatsRef.current.find((c) => c.chat_id === msg.chat_id);
           const name = chat?.other_display_name ?? "New message";
-
           let preview = msg.body ?? "🔒 New message";
-          if (privateKey && msg.ciphertext && msg.nonce && chat?.other_public_key) {
+          const pk = keyRef.current;
+          if (pk && msg.ciphertext && msg.nonce && chat?.other_public_key) {
             try {
               const pub = await importPublicKey(chat.other_public_key);
-              const key = await deriveSharedKey(privateKey, pub);
+              const key = await deriveSharedKey(pk, pub);
               preview = await decryptText(key, msg.ciphertext, msg.nonce);
-            } catch {
-              /* keep fallback */
-            }
+            } catch { /* keep fallback */ }
           }
           showNotification(name, preview, {
             tag: `chat-${msg.chat_id}`,
-            onClick: () =>
-              navigate({ to: "/chat/$chatId", params: { chatId: msg.chat_id } }),
+            onClick: () => navigate({ to: "/chat/$chatId", params: { chatId: msg.chat_id } }),
           });
         },
       )
       .subscribe();
-    return () => {
-      supabase.removeChannel(ch);
-    };
-  }, [user, chats, privateKey, queryClient, navigate]);
+    return () => { supabase.removeChannel(ch); };
+  }, [user, queryClient, navigate]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
