@@ -6,18 +6,37 @@ import { useAuth } from "@/lib/use-auth";
 import { Avatar } from "@/components/Avatar";
 import { formatChatTime } from "@/lib/format";
 import { toast } from "sonner";
+import { useEnsureKeypair } from "@/lib/use-keypair";
+import {
+  decryptText,
+  deriveSharedKey,
+  encryptText,
+  importPublicKey,
+} from "@/lib/crypto";
+import { showNotification } from "@/lib/notifications";
 
 export const Route = createFileRoute("/chat/$chatId")({
   head: () => ({ meta: [{ title: "Chat — Univers." }] }),
   component: ChatPage,
 });
 
+type RawMessage = {
+  id: string;
+  chat_id: string;
+  sender_id: string;
+  body: string | null;
+  ciphertext: string | null;
+  nonce: string | null;
+  created_at: string;
+};
+
 type Message = {
   id: string;
   chat_id: string;
   sender_id: string;
-  body: string;
+  text: string; // plaintext after decryption (or fallback to body)
   created_at: string;
+  encrypted: boolean;
 };
 
 type Member = {
@@ -26,6 +45,7 @@ type Member = {
   username: string;
   avatar_color: string;
   last_seen_at: string;
+  public_key: string | null;
 };
 
 function ChatPage() {
@@ -33,6 +53,7 @@ function ChatPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user, loading: authLoading } = useAuth();
+  const { privateKey } = useEnsureKeypair(user?.id);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -55,7 +76,7 @@ function ChatPage() {
       if (!otherId) return null;
       const { data: prof, error: pErr } = await supabase
         .from("profiles")
-        .select("id, display_name, username, avatar_color, last_seen_at")
+        .select("id, display_name, username, avatar_color, last_seen_at, public_key")
         .eq("id", otherId)
         .single();
       if (pErr) throw pErr;
@@ -65,18 +86,41 @@ function ChatPage() {
         username: prof.username,
         avatar_color: prof.avatar_color,
         last_seen_at: prof.last_seen_at,
+        public_key: prof.public_key,
       };
     },
   });
 
-  // Messages
-  const { data: messages = [] } = useQuery({
+  // Derive the shared AES key for this chat once we have both keys.
+  const [sharedKey, setSharedKey] = useState<CryptoKey | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!privateKey || !other?.public_key) {
+        setSharedKey(null);
+        return;
+      }
+      try {
+        const pub = await importPublicKey(other.public_key);
+        const key = await deriveSharedKey(privateKey, pub);
+        if (!cancelled) setSharedKey(key);
+      } catch (err) {
+        console.error("[e2ee] failed to derive shared key", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [privateKey, other?.public_key]);
+
+  // Raw messages from the server (encrypted)
+  const { data: rawMessages = [] } = useQuery({
     enabled: !!user,
     queryKey: ["messages", chatId],
-    queryFn: async (): Promise<Message[]> => {
+    queryFn: async (): Promise<RawMessage[]> => {
       const { data, error } = await supabase
         .from("messages")
-        .select("id, chat_id, sender_id, body, created_at")
+        .select("id, chat_id, sender_id, body, ciphertext, nonce, created_at")
         .eq("chat_id", chatId)
         .order("created_at", { ascending: true })
         .limit(500);
@@ -85,7 +129,42 @@ function ChatPage() {
     },
   });
 
-  // Realtime: live new messages
+  // Decrypt messages in the browser whenever the raw list or key changes.
+  const [messages, setMessages] = useState<Message[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const out: Message[] = [];
+      for (const m of rawMessages) {
+        let text = m.body ?? "";
+        let encrypted = false;
+        if (m.ciphertext && m.nonce && sharedKey) {
+          try {
+            text = await decryptText(sharedKey, m.ciphertext, m.nonce);
+            encrypted = true;
+          } catch {
+            text = "🔒 Encrypted message";
+          }
+        } else if (m.ciphertext && !sharedKey) {
+          text = "🔒 Encrypted message";
+        }
+        out.push({
+          id: m.id,
+          chat_id: m.chat_id,
+          sender_id: m.sender_id,
+          text,
+          created_at: m.created_at,
+          encrypted,
+        });
+      }
+      if (!cancelled) setMessages(out);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [rawMessages, sharedKey]);
+
+  // Realtime: live new messages + browser notification for incoming ones
   useEffect(() => {
     if (!user) return;
     const ch = supabase
@@ -98,19 +177,34 @@ function ChatPage() {
           table: "messages",
           filter: `chat_id=eq.${chatId}`,
         },
-        (payload) => {
-          const msg = payload.new as Message;
-          queryClient.setQueryData<Message[]>(["messages", chatId], (prev = []) => {
+        async (payload) => {
+          const msg = payload.new as RawMessage;
+          queryClient.setQueryData<RawMessage[]>(["messages", chatId], (prev = []) => {
             if (prev.some((m) => m.id === msg.id)) return prev;
             return [...prev, msg];
           });
+          if (msg.sender_id !== user.id && other) {
+            let preview = msg.body ?? "🔒 New message";
+            if (msg.ciphertext && msg.nonce && sharedKey) {
+              try {
+                preview = await decryptText(sharedKey, msg.ciphertext, msg.nonce);
+              } catch {
+                /* keep fallback */
+              }
+            }
+            showNotification(other.display_name, preview, {
+              tag: `chat-${chatId}`,
+              onClick: () =>
+                navigate({ to: "/chat/$chatId", params: { chatId } }),
+            });
+          }
         },
       )
       .subscribe();
     return () => {
       supabase.removeChannel(ch);
     };
-  }, [chatId, user, queryClient]);
+  }, [chatId, user, other, sharedKey, queryClient, navigate]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -128,17 +222,45 @@ function ChatPage() {
     if (!body || sending || !user) return;
     setSending(true);
     setDraft("");
-    const { error } = await supabase.from("messages").insert({
-      chat_id: chatId,
-      sender_id: user.id,
-      body,
-    });
+
+    let payload: { chat_id: string; sender_id: string; body: string | null; ciphertext: string | null; nonce: string | null };
+    if (sharedKey) {
+      try {
+        const { ciphertext, nonce } = await encryptText(sharedKey, body);
+        payload = {
+          chat_id: chatId,
+          sender_id: user.id,
+          body: null,
+          ciphertext,
+          nonce,
+        };
+      } catch (err) {
+        console.error("[e2ee] encrypt failed", err);
+        toast.error("Couldn't encrypt message.");
+        setSending(false);
+        setDraft(body);
+        return;
+      }
+    } else {
+      // Peer has no public key yet — fall back to plaintext but warn.
+      payload = {
+        chat_id: chatId,
+        sender_id: user.id,
+        body,
+        ciphertext: null,
+        nonce: null,
+      };
+    }
+
+    const { error } = await supabase.from("messages").insert(payload);
     setSending(false);
     if (error) {
       toast.error("Couldn't send: " + error.message);
       setDraft(body);
     }
   }
+
+  const e2eeReady = !!sharedKey;
 
   return (
     <div className="min-h-dvh w-full bg-background flex justify-center">
@@ -162,7 +284,7 @@ function ChatPage() {
                 <div className="truncate text-[15px] font-semibold">{other.display_name}</div>
                 <div className="flex items-center gap-1 text-[11px] text-panel-foreground/55">
                   <LockMini />
-                  <span>end-to-end secure</span>
+                  <span>{e2eeReady ? "end-to-end encrypted" : "secure"}</span>
                 </div>
               </div>
             </>
@@ -185,6 +307,11 @@ function ChatPage() {
                 </div>
                 <p className="mt-3 text-[13px] text-panel-foreground/60">
                   No messages yet. Say hi 👋
+                </p>
+                <p className="mt-1 text-[11px] text-panel-foreground/40">
+                  {e2eeReady
+                    ? "Messages in this chat are end-to-end encrypted."
+                    : "Setting up secure channel…"}
                 </p>
               </div>
             </div>
@@ -306,13 +433,14 @@ function Bubble({
   return (
     <div className={`mb-1 flex ${mine ? "justify-end" : "justify-start"}`}>
       <div className={`${base} ${mine ? mineCls : theirsCls}`}>
-        {msg.body}
+        {msg.text}
         {showTail && (
           <span
-            className={`mt-1 block text-[10px] ${
+            className={`mt-1 flex items-center gap-1 text-[10px] ${
               mine ? "text-primary-foreground/70" : "text-panel-foreground/45"
             }`}
           >
+            {msg.encrypted && <LockMini />}
             {formatChatTime(msg.created_at)}
           </span>
         )}
