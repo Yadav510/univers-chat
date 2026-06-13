@@ -317,7 +317,7 @@ function ChatsPage() {
           >
             <div className="px-4 pb-3">
               <label
-                className="pointer-events-auto flex h-12 w-full items-center gap-2.5 rounded-full bg-panel-foreground/[0.06] px-4 backdrop-blur-md"
+                className="pointer-events-auto flex h-12 w-full items-center gap-2.5 rounded-full bg-white/[0.06] px-4 backdrop-blur-md"
                 style={{ boxShadow: "0 8px 24px -8px rgba(0,0,0,0.18)" }}
               >
                 <span className="shrink-0 text-panel-foreground/60">
@@ -334,7 +334,7 @@ function ChatsPage() {
                     type="button"
                     onClick={() => setSearch("")}
                     aria-label="Clear"
-                    className="press grid h-6 w-6 place-items-center rounded-full bg-panel-foreground/10 text-panel-foreground/70"
+                    className="press grid h-6 w-6 place-items-center rounded-full bg-white/10 text-panel-foreground/70"
                   >
                     <CloseIcon />
                   </button>
