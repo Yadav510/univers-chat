@@ -82,7 +82,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         content:
           "width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1",
       },
-      { name: "theme-color", content: "#07070E" },
+      { name: "theme-color", content: "#0a0a1a" },
       { title: "Univers. — Private. Powerful. Yours." },
       {
         name: "description",
@@ -90,30 +90,21 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           "Univers. is a premium private messenger. End-to-end encrypted. Zero data sold.",
       },
       { property: "og:title", content: "Univers. — Private. Powerful. Yours." },
-      {
-        property: "og:description",
-        content: "Private. Powerful. Yours.",
-      },
+      { property: "og:description", content: "Private. Powerful. Yours." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:title", content: "Univers. — Private. Powerful. Yours." },
-      { name: "description", content: "Univers Chat is a premium private messaging app offering secure, end-to-end encrypted communication." },
-      { property: "og:description", content: "Univers Chat is a premium private messaging app offering secure, end-to-end encrypted communication." },
-      { name: "twitter:description", content: "Univers Chat is a premium private messaging app offering secure, end-to-end encrypted communication." },
+      { name: "twitter:description", content: "Private. Powerful. Yours." },
       { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/3d89fdab-a4df-4e11-ad6a-de577a2fcd9c/id-preview-5c1c515c--4d55bbf6-4754-4cb9-8edf-14d69a565fdd.lovable.app-1781352061271.png" },
       { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/3d89fdab-a4df-4e11-ad6a-de577a2fcd9c/id-preview-5c1c515c--4d55bbf6-4754-4cb9-8edf-14d69a565fdd.lovable.app-1781352061271.png" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
-      {
-        rel: "preconnect",
-        href: "https://fonts.gstatic.com",
-        crossOrigin: "anonymous",
-      },
+      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap",
       },
     ],
   }),
