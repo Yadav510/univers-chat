@@ -304,32 +304,34 @@ function ChatRowItem({ chat, meId }: { chat: ChatRow; meId?: string }) {
   );
 }
 
-function EmptyState({ tab }: { tab: Tab }) {
+function matchesSearch(chat: ChatRow, term: string) {
+  if (!term) return true;
+  return [
+    chat.other_display_name,
+    chat.other_username,
+    chat.last_message_body,
+  ]
+    .filter(Boolean)
+    .some((value) => value!.toLowerCase().includes(term));
+}
+
+function EmptyState({ tab, searching }: { tab: Tab; searching: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center px-8 py-16 text-center">
       <div className="grid h-16 w-16 place-items-center rounded-2xl bg-primary/15 text-primary">
         <ComposeIcon />
       </div>
       <h3 className="mt-4 text-[16px] font-semibold text-panel-foreground">
-        {tab === "All" ? "No conversations yet" : `No ${tab.toLowerCase()} chats`}
+        {searching ? "No matching chats" : tab === "All" ? "No conversations yet" : `No ${tab.toLowerCase()} chats`}
       </h3>
       <p className="mt-1.5 max-w-[260px] text-[13px] text-panel-foreground/55">
-        {tab === "All"
+        {searching
+          ? "Try another name, username, or message."
+          : tab === "All"
           ? "Tap the green button to find someone by username and start chatting."
           : "Conversations matching this filter will appear here."}
       </p>
     </div>
-  );
-}
-
-function IconBtn({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <button
-      aria-label={label}
-      className="press flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-foreground"
-    >
-      {children}
-    </button>
   );
 }
 
