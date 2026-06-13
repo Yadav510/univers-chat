@@ -63,24 +63,30 @@ export type Database = {
       }
       messages: {
         Row: {
-          body: string
+          body: string | null
           chat_id: string
+          ciphertext: string | null
           created_at: string
           id: string
+          nonce: string | null
           sender_id: string
         }
         Insert: {
-          body: string
+          body?: string | null
           chat_id: string
+          ciphertext?: string | null
           created_at?: string
           id?: string
+          nonce?: string | null
           sender_id: string
         }
         Update: {
-          body?: string
+          body?: string | null
           chat_id?: string
+          ciphertext?: string | null
           created_at?: string
           id?: string
+          nonce?: string | null
           sender_id?: string
         }
         Relationships: [
@@ -101,6 +107,7 @@ export type Database = {
           display_name: string
           id: string
           last_seen_at: string
+          public_key: string | null
           username: string
         }
         Insert: {
@@ -110,6 +117,7 @@ export type Database = {
           display_name: string
           id: string
           last_seen_at?: string
+          public_key?: string | null
           username: string
         }
         Update: {
@@ -119,6 +127,7 @@ export type Database = {
           display_name?: string
           id?: string
           last_seen_at?: string
+          public_key?: string | null
           username?: string
         }
         Relationships: []
@@ -143,11 +152,14 @@ export type Database = {
           is_group: boolean
           last_message_at: string
           last_message_body: string
+          last_message_ciphertext: string
           last_message_created_at: string
+          last_message_nonce: string
           last_message_sender: string
           other_avatar_color: string
           other_display_name: string
           other_last_seen_at: string
+          other_public_key: string
           other_user_id: string
           other_username: string
         }[]

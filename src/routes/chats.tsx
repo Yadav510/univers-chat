@@ -6,6 +6,18 @@ import { useAuth } from "@/lib/use-auth";
 import { Avatar } from "@/components/Avatar";
 import { AppTabBar } from "@/components/AppTabBar";
 import { formatChatTime } from "@/lib/format";
+import { useEnsureKeypair } from "@/lib/use-keypair";
+import {
+  decryptText,
+  deriveSharedKey,
+  importPublicKey,
+} from "@/lib/crypto";
+import {
+  notifPermission,
+  requestNotifPermission,
+  showNotification,
+} from "@/lib/notifications";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/chats")({
   head: () => ({ meta: [{ title: "Messages — Univers." }] }),
@@ -21,7 +33,10 @@ type ChatRow = {
   other_display_name: string | null;
   other_avatar_color: string | null;
   other_last_seen_at: string | null;
+  other_public_key: string | null;
   last_message_body: string | null;
+  last_message_ciphertext: string | null;
+  last_message_nonce: string | null;
   last_message_sender: string | null;
   last_message_created_at: string | null;
 };
@@ -29,13 +44,29 @@ type ChatRow = {
 function ChatsPage() {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
+  const { privateKey } = useEnsureKeypair(user?.id);
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [notifState, setNotifState] = useState(notifPermission());
 
   // Redirect if not signed in
   useEffect(() => {
     if (!loading && !user) navigate({ to: "/", replace: true });
   }, [loading, user, navigate]);
+
+  // Heartbeat presence — refresh last_seen_at every 30s.
+  useEffect(() => {
+    if (!user) return;
+    const tick = () => {
+      void supabase
+        .from("profiles")
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq("id", user.id);
+    };
+    tick();
+    const id = setInterval(tick, 30_000);
+    return () => clearInterval(id);
+  }, [user]);
 
   const { data: me } = useQuery({
     enabled: !!user,
@@ -61,8 +92,42 @@ function ChatsPage() {
     },
   });
 
-  // Realtime: refetch chat list whenever a new message hits any chat I'm in.
-  // RLS already restricts what comes back.
+  // Decrypt last-message previews per chat (so the list shows real text).
+  const [previews, setPreviews] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!privateKey) {
+      setPreviews({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const next: Record<string, string> = {};
+      for (const c of chats) {
+        if (c.last_message_ciphertext && c.last_message_nonce && c.other_public_key) {
+          try {
+            const pub = await importPublicKey(c.other_public_key);
+            const key = await deriveSharedKey(privateKey, pub);
+            next[c.chat_id] = await decryptText(
+              key,
+              c.last_message_ciphertext,
+              c.last_message_nonce,
+            );
+          } catch {
+            next[c.chat_id] = "🔒 Encrypted message";
+          }
+        } else if (c.last_message_body) {
+          next[c.chat_id] = c.last_message_body;
+        }
+      }
+      if (!cancelled) setPreviews(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [chats, privateKey]);
+
+  // Realtime: refetch chat list + fire notifications when a message hits
+  // a chat I'm in (RLS already filters this to me).
   useEffect(() => {
     if (!user) return;
     const ch = supabase
@@ -70,20 +135,63 @@ function ChatsPage() {
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages" },
-        () => {
+        async (payload) => {
           queryClient.invalidateQueries({ queryKey: ["my-chats", user.id] });
+          const msg = payload.new as {
+            chat_id: string;
+            sender_id: string;
+            body: string | null;
+            ciphertext: string | null;
+            nonce: string | null;
+          };
+          if (msg.sender_id === user.id) return;
+
+          // Find sender info from the current chat list.
+          const chat = chats.find((c) => c.chat_id === msg.chat_id);
+          const name = chat?.other_display_name ?? "New message";
+
+          let preview = msg.body ?? "🔒 New message";
+          if (privateKey && msg.ciphertext && msg.nonce && chat?.other_public_key) {
+            try {
+              const pub = await importPublicKey(chat.other_public_key);
+              const key = await deriveSharedKey(privateKey, pub);
+              preview = await decryptText(key, msg.ciphertext, msg.nonce);
+            } catch {
+              /* keep fallback */
+            }
+          }
+          showNotification(name, preview, {
+            tag: `chat-${msg.chat_id}`,
+            onClick: () =>
+              navigate({ to: "/chat/$chatId", params: { chatId: msg.chat_id } }),
+          });
         },
       )
       .subscribe();
     return () => {
       supabase.removeChannel(ch);
     };
-  }, [user, queryClient]);
+  }, [user, chats, privateKey, queryClient, navigate]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return chats.filter((c) => matchesSearch(c, term));
-  }, [chats, search]);
+    return chats.filter((c) => matchesSearch(c, term, previews[c.chat_id]));
+  }, [chats, search, previews]);
+
+  const activeNow = useMemo(() => {
+    const now = Date.now();
+    return chats.filter((c) => {
+      if (!c.other_last_seen_at) return false;
+      return now - new Date(c.other_last_seen_at).getTime() < 2 * 60_000; // 2 min
+    });
+  }, [chats]);
+
+  async function enableNotifications() {
+    const res = await requestNotifPermission();
+    setNotifState(res);
+    if (res === "granted") toast.success("Notifications on");
+    else if (res === "denied") toast.error("Notifications blocked in browser settings");
+  }
 
   return (
     <div className="min-h-dvh w-full bg-background flex justify-center">
@@ -93,69 +201,76 @@ function ChatsPage() {
       >
         {/* ====== Dark green header ====== */}
         <header className="px-5 pt-4 pb-5 text-foreground">
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2.5">
-                <h1 className="wordmark text-[34px] truncate">Messages</h1>
-                <span className="inline-flex h-7 items-center justify-center rounded-full bg-primary px-2.5 text-[12px] font-bold text-primary-foreground">
-                  {chats.length}
-                </span>
-              </div>
-              <label className="mt-3 flex h-10 max-w-[260px] items-center gap-2 rounded-full bg-white/10 px-3.5 text-foreground">
-                <span className="shrink-0 text-foreground/70">
-                  <SearchIcon />
-                </span>
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search chats"
-                  className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground placeholder:text-foreground/45 focus:outline-none"
-                />
-              </label>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <h1 className="wordmark text-[32px] truncate">Messages</h1>
+              <span className="inline-flex h-6 items-center justify-center rounded-full bg-primary px-2 text-[11px] font-bold text-primary-foreground">
+                {chats.length}
+              </span>
             </div>
-            <Link
-              to="/me"
-              aria-label="Your profile"
-              className="press shrink-0"
-            >
-              {me ? (
-                <Avatar
-                  name={me.display_name}
-                  color={me.avatar_color}
-                  size={42}
-                  ring="mint"
-                />
-              ) : (
-                <div className="h-[42px] w-[42px] rounded-full bg-white/10" />
+            <div className="flex items-center gap-2 shrink-0">
+              {notifState !== "granted" && notifState !== "unsupported" && (
+                <button
+                  onClick={enableNotifications}
+                  aria-label="Enable notifications"
+                  title="Enable notifications"
+                  className="press grid h-10 w-10 place-items-center rounded-full bg-white/10 text-foreground"
+                >
+                  <BellIcon />
+                </button>
               )}
-            </Link>
+              <Link to="/me" aria-label="Your profile" className="press">
+                {me ? (
+                  <Avatar
+                    name={me.display_name}
+                    color={me.avatar_color}
+                    size={40}
+                    ring="mint"
+                  />
+                ) : (
+                  <div className="h-10 w-10 rounded-full bg-white/10" />
+                )}
+              </Link>
+            </div>
           </div>
 
-          {/* Stories row — placeholder when no chats yet */}
-          <div className="no-scrollbar mt-5 flex gap-3 overflow-x-auto pb-1">
-            <StoryItem
-              label="You"
-              color={me?.avatar_color ?? "#2DE682"}
-              name={me?.display_name ?? "You"}
-              onClick={() => navigate({ to: "/me" })}
-              isMe
-            />
-            {chats.slice(0, 8).map((c) =>
-              c.other_user_id && c.other_display_name && c.other_avatar_color ? (
-                <StoryItem
-                  key={c.other_user_id}
-                  label={c.other_display_name.split(" ")[0]}
-                  color={c.other_avatar_color}
-                  name={c.other_display_name}
-                  onClick={() =>
-                    navigate({
-                      to: "/chat/$chatId",
-                      params: { chatId: c.chat_id },
-                    })
-                  }
-                />
-              ) : null,
-            )}
+          {/* Status / online-now row */}
+          <div className="mt-5">
+            <div className="flex items-center justify-between mb-2.5 px-0.5">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/50">
+                Status
+              </span>
+              <span className="text-[11px] text-foreground/40">
+                {activeNow.length} active now
+              </span>
+            </div>
+            <div className="no-scrollbar flex gap-3 overflow-x-auto pb-1">
+              <StoryItem
+                label="You"
+                color={me?.avatar_color ?? "#2DE682"}
+                name={me?.display_name ?? "You"}
+                online
+                onClick={() => navigate({ to: "/me" })}
+                isMe
+              />
+              {chats.map((c) =>
+                c.other_user_id && c.other_display_name && c.other_avatar_color ? (
+                  <StoryItem
+                    key={c.other_user_id}
+                    label={c.other_display_name.split(" ")[0]}
+                    color={c.other_avatar_color}
+                    name={c.other_display_name}
+                    online={isOnline(c.other_last_seen_at)}
+                    onClick={() =>
+                      navigate({
+                        to: "/chat/$chatId",
+                        params: { chatId: c.chat_id },
+                      })
+                    }
+                  />
+                ) : null,
+              )}
+            </div>
           </div>
         </header>
 
@@ -164,18 +279,66 @@ function ChatsPage() {
           className="flex flex-1 flex-col rounded-t-[28px] bg-panel text-panel-foreground"
           style={{ boxShadow: "var(--shadow-panel)" }}
         >
-          <div className="px-5 pt-5 pb-3 text-[13px] font-semibold text-panel-foreground/55">
-            {search.trim() ? `${filtered.length} result${filtered.length === 1 ? "" : "s"}` : "All conversations"}
+          <div className="flex items-center justify-between px-5 pt-5 pb-3">
+            <span className="text-[13px] font-semibold text-panel-foreground/55">
+              {search.trim()
+                ? `${filtered.length} result${filtered.length === 1 ? "" : "s"}`
+                : "All conversations"}
+            </span>
+            <span className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-panel-foreground/45">
+              <LockMini />
+              end-to-end
+            </span>
           </div>
 
           {/* Chat list */}
-          <ul className="flex-1 overflow-y-auto pb-2">
+          <ul className="flex-1 overflow-y-auto pb-[100px]">
             {filtered.length === 0 ? (
               <EmptyState searching={search.trim().length > 0} />
             ) : (
-              filtered.map((c) => <ChatRowItem key={c.chat_id} chat={c} meId={user?.id} />)
+              filtered.map((c) => (
+                <ChatRowItem
+                  key={c.chat_id}
+                  chat={c}
+                  meId={user?.id}
+                  preview={previews[c.chat_id]}
+                />
+              ))
             )}
           </ul>
+
+          {/* Long pill search bar pinned above the tab bar */}
+          <div
+            className="pointer-events-none absolute inset-x-0 z-10"
+            style={{ bottom: "calc(64px + env(safe-area-inset-bottom))" }}
+          >
+            <div className="px-4 pb-3">
+              <label
+                className="pointer-events-auto flex h-12 w-full items-center gap-2.5 rounded-full bg-panel-foreground/[0.06] px-4 backdrop-blur-md"
+                style={{ boxShadow: "0 8px 24px -8px rgba(0,0,0,0.18)" }}
+              >
+                <span className="shrink-0 text-panel-foreground/60">
+                  <SearchIcon />
+                </span>
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search conversations, names, messages"
+                  className="min-w-0 flex-1 bg-transparent text-[14px] text-panel-foreground placeholder:text-panel-foreground/45 focus:outline-none"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch("")}
+                    aria-label="Clear"
+                    className="press grid h-6 w-6 place-items-center rounded-full bg-panel-foreground/10 text-panel-foreground/70"
+                  >
+                    <CloseIcon />
+                  </button>
+                )}
+              </label>
+            </div>
+          </div>
 
           <AppTabBar active="chats" />
         </section>
@@ -191,12 +354,14 @@ function StoryItem({
   color,
   name,
   onClick,
+  online = false,
   isMe = false,
 }: {
   label: string;
   color: string;
   name: string;
   onClick: () => void;
+  online?: boolean;
   isMe?: boolean;
 }) {
   return (
@@ -204,8 +369,15 @@ function StoryItem({
       onClick={onClick}
       className="press flex w-[64px] shrink-0 flex-col items-center gap-1.5"
     >
-      <span className="rounded-full p-[2.5px] ring-2 ring-primary">
+      <span
+        className={`relative rounded-full p-[2.5px] ${
+          online ? "ring-2 ring-primary" : "ring-2 ring-white/15"
+        }`}
+      >
         <Avatar name={name} color={color} size={52} />
+        {online && !isMe && (
+          <span className="absolute bottom-0.5 right-0.5 h-3 w-3 rounded-full border-2 border-background bg-primary online-dot" />
+        )}
       </span>
       <span className="truncate w-full text-center text-[10.5px] text-foreground/85">
         {isMe ? "You" : label}
@@ -214,12 +386,25 @@ function StoryItem({
   );
 }
 
-function ChatRowItem({ chat, meId }: { chat: ChatRow; meId?: string }) {
+function ChatRowItem({
+  chat,
+  meId,
+  preview,
+}: {
+  chat: ChatRow;
+  meId?: string;
+  preview?: string;
+}) {
   const name = chat.other_display_name ?? "Unknown";
   const color = chat.other_avatar_color ?? "#2DE682";
-  const preview = chat.last_message_body ?? "Say hi 👋";
+  const displayPreview =
+    preview ??
+    (chat.last_message_ciphertext
+      ? "🔒 Encrypted message"
+      : chat.last_message_body ?? "Say hi 👋");
   const sentByMe = chat.last_message_sender && chat.last_message_sender === meId;
   const time = formatChatTime(chat.last_message_created_at ?? chat.last_message_at);
+  const online = isOnline(chat.other_last_seen_at);
 
   return (
     <li className="hairline-b">
@@ -228,7 +413,12 @@ function ChatRowItem({ chat, meId }: { chat: ChatRow; meId?: string }) {
         params={{ chatId: chat.chat_id }}
         className="press flex w-full items-center gap-3 px-5 py-3.5"
       >
-        <Avatar name={name} color={color} size={50} />
+        <div className="relative shrink-0">
+          <Avatar name={name} color={color} size={50} />
+          {online && (
+            <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-panel bg-primary online-dot" />
+          )}
+        </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
             <span className="truncate text-[15px] font-semibold text-panel-foreground">
@@ -239,9 +429,9 @@ function ChatRowItem({ chat, meId }: { chat: ChatRow; meId?: string }) {
           <div className="mt-0.5 flex items-center justify-between gap-2">
             <span className="truncate text-[13px] text-panel-foreground/55">
               {sentByMe ? "You: " : ""}
-              {preview}
+              {displayPreview}
             </span>
-            {!sentByMe && chat.last_message_body ? (
+            {!sentByMe && chat.last_message_created_at ? (
               <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-hidden />
             ) : null}
           </div>
@@ -251,15 +441,16 @@ function ChatRowItem({ chat, meId }: { chat: ChatRow; meId?: string }) {
   );
 }
 
-function matchesSearch(chat: ChatRow, term: string) {
+function matchesSearch(chat: ChatRow, term: string, preview?: string) {
   if (!term) return true;
-  return [
-    chat.other_display_name,
-    chat.other_username,
-    chat.last_message_body,
-  ]
+  return [chat.other_display_name, chat.other_username, preview]
     .filter(Boolean)
     .some((value) => value!.toLowerCase().includes(term));
+}
+
+function isOnline(lastSeen: string | null) {
+  if (!lastSeen) return false;
+  return Date.now() - new Date(lastSeen).getTime() < 2 * 60_000;
 }
 
 function EmptyState({ searching }: { searching: boolean }) {
@@ -283,7 +474,7 @@ function EmptyState({ searching }: { searching: boolean }) {
 /* ============== Icons ============== */
 function SearchIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
       <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.8" />
       <path d="M16 16l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
@@ -293,6 +484,29 @@ function ComposeIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
       <path d="M4 20h4l10-10-4-4L4 16v4z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function BellIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2H4.5L6 16z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M10 20a2 2 0 0 0 4 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+function CloseIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+      <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+function LockMini() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+      <rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" strokeWidth="2" />
+      <path d="M8 11V8a4 4 0 018 0v3" stroke="currentColor" strokeWidth="2" />
     </svg>
   );
 }
