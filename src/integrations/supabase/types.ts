@@ -61,8 +61,41 @@ export type Database = {
         }
         Relationships: []
       }
+      device_tokens: {
+        Row: {
+          created_at: string
+          id: string
+          platform: string
+          token: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          platform?: string
+          token: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          platform?: string
+          token?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       messages: {
         Row: {
+          attachment_key_ciphertext: string | null
+          attachment_key_nonce: string | null
+          attachment_mime: string | null
+          attachment_name_ciphertext: string | null
+          attachment_path: string | null
+          attachment_size: number | null
           body: string | null
           chat_id: string
           ciphertext: string | null
@@ -72,6 +105,12 @@ export type Database = {
           sender_id: string
         }
         Insert: {
+          attachment_key_ciphertext?: string | null
+          attachment_key_nonce?: string | null
+          attachment_mime?: string | null
+          attachment_name_ciphertext?: string | null
+          attachment_path?: string | null
+          attachment_size?: number | null
           body?: string | null
           chat_id: string
           ciphertext?: string | null
@@ -81,6 +120,12 @@ export type Database = {
           sender_id: string
         }
         Update: {
+          attachment_key_ciphertext?: string | null
+          attachment_key_nonce?: string | null
+          attachment_mime?: string | null
+          attachment_name_ciphertext?: string | null
+          attachment_path?: string | null
+          attachment_size?: number | null
           body?: string | null
           chat_id?: string
           ciphertext?: string | null
@@ -170,6 +215,7 @@ export type Database = {
           chat_id: string
           is_group: boolean
           last_message_at: string
+          last_message_attachment_mime: string
           last_message_body: string
           last_message_ciphertext: string
           last_message_created_at: string
