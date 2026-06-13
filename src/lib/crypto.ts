@@ -110,7 +110,7 @@ export async function encryptText(
 ): Promise<{ ciphertext: string; nonce: string }> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
+    { name: "AES-GCM", iv: toBuf(iv) },
     key,
     new TextEncoder().encode(plaintext),
   );
@@ -122,10 +122,16 @@ export async function decryptText(
   ciphertext: string,
   nonce: string,
 ): Promise<string> {
+  const ivBytes = b64decode(nonce);
+  const ctBytes = b64decode(ciphertext);
   const pt = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: b64decode(nonce) },
+    { name: "AES-GCM", iv: toBuf(ivBytes) },
     key,
-    b64decode(ciphertext),
+    toBuf(ctBytes),
   );
   return new TextDecoder().decode(pt);
+}
+
+function toBuf(u: Uint8Array): ArrayBuffer {
+  return u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength) as ArrayBuffer;
 }
