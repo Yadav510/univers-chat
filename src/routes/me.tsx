@@ -117,7 +117,7 @@ function SectionLabel({ children, className = "" }: { children: React.ReactNode;
 
 function SettingsCard({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mt-2 overflow-hidden rounded-2xl border border-black/[0.06] bg-white">
+    <div className="mt-2 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]">
       {children}
     </div>
   );

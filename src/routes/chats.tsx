@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/use-auth";
@@ -135,6 +135,12 @@ function ChatsPage() {
 
   // Realtime: refetch chat list + fire notifications when a message hits
   // a chat I'm in (RLS already filters this to me).
+  // Use refs for chats/privateKey so we don't resubscribe on every refetch.
+  const chatsRef = useRef<ChatRow[]>(chats);
+  const keyRef = useRef<CryptoKey | null>(privateKey);
+  useEffect(() => { chatsRef.current = chats; }, [chats]);
+  useEffect(() => { keyRef.current = privateKey; }, [privateKey]);
+
   useEffect(() => {
     if (!user) return;
     const ch = supabase
@@ -145,40 +151,30 @@ function ChatsPage() {
         async (payload) => {
           queryClient.invalidateQueries({ queryKey: ["my-chats", user.id] });
           const msg = payload.new as {
-            chat_id: string;
-            sender_id: string;
-            body: string | null;
-            ciphertext: string | null;
-            nonce: string | null;
+            chat_id: string; sender_id: string; body: string | null;
+            ciphertext: string | null; nonce: string | null;
           };
           if (msg.sender_id === user.id) return;
-
-          // Find sender info from the current chat list.
-          const chat = chats.find((c) => c.chat_id === msg.chat_id);
+          const chat = chatsRef.current.find((c) => c.chat_id === msg.chat_id);
           const name = chat?.other_display_name ?? "New message";
-
           let preview = msg.body ?? "🔒 New message";
-          if (privateKey && msg.ciphertext && msg.nonce && chat?.other_public_key) {
+          const pk = keyRef.current;
+          if (pk && msg.ciphertext && msg.nonce && chat?.other_public_key) {
             try {
               const pub = await importPublicKey(chat.other_public_key);
-              const key = await deriveSharedKey(privateKey, pub);
+              const key = await deriveSharedKey(pk, pub);
               preview = await decryptText(key, msg.ciphertext, msg.nonce);
-            } catch {
-              /* keep fallback */
-            }
+            } catch { /* keep fallback */ }
           }
           showNotification(name, preview, {
             tag: `chat-${msg.chat_id}`,
-            onClick: () =>
-              navigate({ to: "/chat/$chatId", params: { chatId: msg.chat_id } }),
+            onClick: () => navigate({ to: "/chat/$chatId", params: { chatId: msg.chat_id } }),
           });
         },
       )
       .subscribe();
-    return () => {
-      supabase.removeChannel(ch);
-    };
-  }, [user, chats, privateKey, queryClient, navigate]);
+    return () => { supabase.removeChannel(ch); };
+  }, [user, queryClient, navigate]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -321,7 +317,7 @@ function ChatsPage() {
           >
             <div className="px-4 pb-3">
               <label
-                className="pointer-events-auto flex h-12 w-full items-center gap-2.5 rounded-full bg-panel-foreground/[0.06] px-4 backdrop-blur-md"
+                className="pointer-events-auto flex h-12 w-full items-center gap-2.5 rounded-full bg-white/[0.06] px-4 backdrop-blur-md"
                 style={{ boxShadow: "0 8px 24px -8px rgba(0,0,0,0.18)" }}
               >
                 <span className="shrink-0 text-panel-foreground/60">
@@ -338,7 +334,7 @@ function ChatsPage() {
                     type="button"
                     onClick={() => setSearch("")}
                     aria-label="Clear"
-                    className="press grid h-6 w-6 place-items-center rounded-full bg-panel-foreground/10 text-panel-foreground/70"
+                    className="press grid h-6 w-6 place-items-center rounded-full bg-white/10 text-panel-foreground/70"
                   >
                     <CloseIcon />
                   </button>
@@ -423,7 +419,7 @@ function ChatRowItem({
         <div className="relative shrink-0">
           <Avatar name={name} color={color} size={50} />
           {online && (
-            <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-panel bg-primary online-dot" />
+            <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-background bg-primary online-dot" />
           )}
         </div>
         <div className="min-w-0 flex-1">

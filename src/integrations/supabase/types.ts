@@ -88,6 +88,84 @@ export type Database = {
         }
         Relationships: []
       }
+      message_reactions: {
+        Row: {
+          chat_id: string
+          created_at: string
+          emoji: string
+          id: string
+          message_id: string
+          user_id: string
+        }
+        Insert: {
+          chat_id: string
+          created_at?: string
+          emoji: string
+          id?: string
+          message_id: string
+          user_id: string
+        }
+        Update: {
+          chat_id?: string
+          created_at?: string
+          emoji?: string
+          id?: string
+          message_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_reactions_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_reactions_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      message_reads: {
+        Row: {
+          chat_id: string
+          message_id: string
+          read_at: string
+          user_id: string
+        }
+        Insert: {
+          chat_id: string
+          message_id: string
+          read_at?: string
+          user_id: string
+        }
+        Update: {
+          chat_id?: string
+          message_id?: string
+          read_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_reads_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_reads_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           attachment_key_ciphertext: string | null
@@ -102,6 +180,7 @@ export type Database = {
           created_at: string
           id: string
           nonce: string | null
+          reply_to_id: string | null
           sender_id: string
         }
         Insert: {
@@ -117,6 +196,7 @@ export type Database = {
           created_at?: string
           id?: string
           nonce?: string | null
+          reply_to_id?: string | null
           sender_id: string
         }
         Update: {
@@ -132,6 +212,7 @@ export type Database = {
           created_at?: string
           id?: string
           nonce?: string | null
+          reply_to_id?: string | null
           sender_id?: string
         }
         Relationships: [
@@ -140,6 +221,13 @@ export type Database = {
             columns: ["chat_id"]
             isOneToOne: false
             referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_reply_to_id_fkey"
+            columns: ["reply_to_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
             referencedColumns: ["id"]
           },
         ]
@@ -176,6 +264,32 @@ export type Database = {
           username?: string
         }
         Relationships: []
+      }
+      typing_status: {
+        Row: {
+          chat_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          chat_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          chat_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "typing_status_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
