@@ -48,7 +48,7 @@ function MePage() {
         <header className="flex items-center gap-3 px-3 py-2.5 text-foreground">
           <Link
             to="/chats"
-            className="press flex h-9 w-9 items-center justify-center rounded-full bg-white/10"
+            className="press flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.04]/10"
             aria-label="Back"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
@@ -63,7 +63,7 @@ function MePage() {
           {profile ? (
             <Avatar name={profile.display_name} color={profile.avatar_color} size={96} ring="mint" />
           ) : (
-            <div className="h-24 w-24 rounded-full bg-white/10" />
+            <div className="h-24 w-24 rounded-full bg-white/[0.04]/10" />
           )}
           <h2 className="mt-4 text-[22px] font-bold tracking-tight">
             {profile?.display_name ?? "…"}
@@ -117,7 +117,7 @@ function SectionLabel({ children, className = "" }: { children: React.ReactNode;
 
 function SettingsCard({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mt-2 overflow-hidden rounded-2xl border border-black/[0.06] bg-white">
+    <div className="mt-2 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]/[0.04]">
       {children}
     </div>
   );

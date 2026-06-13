@@ -78,7 +78,7 @@ function NewChatPage() {
         </header>
 
         <div className="px-4 pt-3">
-          <div className="flex h-12 items-center gap-2 rounded-2xl border border-black/10 bg-white px-3.5">
+          <div className="flex h-12 items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3.5">
             <SearchIcon />
             <input
               autoFocus

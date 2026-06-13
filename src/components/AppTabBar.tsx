@@ -6,7 +6,7 @@ export function AppTabBar({ active }: { active: TabKey }) {
   return (
     <nav
       aria-label="Main navigation"
-      className="sticky bottom-0 z-20 border-t border-black/[0.08] bg-panel/95 px-4 pt-2 backdrop-blur-xl"
+      className="sticky bottom-0 z-20 border-t border-white/10 bg-background/85 px-4 pt-2 backdrop-blur-xl"
       style={{ paddingBottom: "max(env(safe-area-inset-bottom), 10px)" }}
     >
       <div className="grid h-14 grid-cols-3 items-center gap-2">
@@ -36,7 +36,7 @@ function TabLink({
       className={`press flex h-12 min-w-0 flex-col items-center justify-center gap-0.5 rounded-2xl text-[11px] font-semibold transition ${
         active
           ? "bg-primary text-primary-foreground"
-          : "text-panel-foreground/55 hover:bg-black/[0.04]"
+          : "text-panel-foreground/55 hover:bg-white/5"
       }`}
     >
       {icon}

@@ -419,7 +419,7 @@ function ChatRowItem({
         <div className="relative shrink-0">
           <Avatar name={name} color={color} size={50} />
           {online && (
-            <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-panel bg-primary online-dot" />
+            <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-background bg-primary online-dot" />
           )}
         </div>
         <div className="min-w-0 flex-1">
