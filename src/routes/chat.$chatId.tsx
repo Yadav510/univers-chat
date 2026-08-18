@@ -263,8 +263,28 @@ function ChatPage() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length, otherTyping]);
 
-  const items = useMemo(() => groupForRender(messages), [messages]);
-  const messageMap = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
+  // Queued (offline) messages render as pending bubbles at the bottom.
+  const pending = useOutbox(chatId);
+  const allMessages = useMemo<Message[]>(
+    () => [
+      ...messages,
+      ...pending.map((p) => ({
+        id: p.id,
+        chat_id: p.chat_id,
+        sender_id: p.sender_id,
+        text: p.preview,
+        created_at: p.created_at,
+        encrypted: true,
+        reply_to_id: p.reply_to_id,
+        attachment: null,
+        pending: true,
+      })),
+    ],
+    [messages, pending],
+  );
+
+  const items = useMemo(() => groupForRender(allMessages), [allMessages]);
+  const messageMap = useMemo(() => new Map(allMessages.map((m) => [m.id, m])), [allMessages]);
 
   function broadcastTyping() {
     if (!user) return;
