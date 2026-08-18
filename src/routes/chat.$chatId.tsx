@@ -70,6 +70,8 @@ type Message = {
   encrypted: boolean;
   reply_to_id: string | null;
   attachment: Attachment | null;
+  /** queued locally, not yet acknowledged by the server */
+  pending?: boolean;
 };
 
 type Reaction = { id: string; message_id: string; user_id: string; emoji: string };
