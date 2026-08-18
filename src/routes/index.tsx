@@ -9,63 +9,84 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Univers. is a premium private messenger. End-to-end secure. Zero data sold.",
+          "Univers. is a premium private messenger. End-to-end encrypted, works offline, instant delivery.",
       },
+      { property: "og:title", content: "Univers. — Private messaging" },
+      {
+        property: "og:description",
+        content:
+          "End-to-end encrypted messaging that works offline and delivers instantly.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: SplashPage,
 });
 
 function SplashPage() {
+  const navigate = useNavigate();
+  const { session, loading } = useAuth();
+
+  useEffect(() => {
+    if (!loading && session) navigate({ to: "/chats", replace: true });
+  }, [loading, session, navigate]);
+
   return (
     <div
-      className="relative min-h-dvh w-full overflow-hidden bg-background flex justify-center items-center px-6"
+      className="relative min-h-dvh w-full overflow-hidden bg-background flex justify-center"
       style={{
         paddingTop: "env(safe-area-inset-top)",
         paddingBottom: "env(safe-area-inset-bottom)",
       }}
     >
       <div className="pointer-events-none absolute inset-0 starfield opacity-60" />
-      
-      <div className="relative w-full max-w-[420px] flex flex-col items-center text-center">
-        <div className="mb-8 p-6 rounded-full bg-destructive/10 border border-destructive/20 glow-red">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="48"
-            height="48"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="text-destructive animate-pulse"
-          >
-            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
-            <path d="M12 9v4" />
-            <path d="M12 17h.01" />
-          </svg>
+      <div
+        className="pointer-events-none absolute inset-x-0 top-1/3 h-[440px] blur-[120px] opacity-60"
+        style={{
+          background:
+            "radial-gradient(ellipse at center, color-mix(in oklab, var(--primary) 60%, transparent), transparent 70%)",
+        }}
+      />
+
+      <div className="relative w-full max-w-[420px] min-h-dvh flex flex-col items-center px-6">
+        <div className="flex-1 flex flex-col items-center justify-center text-center">
+          <h1 className="wordmark text-[56px] text-foreground">
+            Univers<span className="text-primary">.</span>
+          </h1>
+          <p className="mt-4 text-[15px] text-white/55 tracking-tight">
+            Private. Powerful. Yours.
+          </p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+            {["End-to-end encrypted", "Works offline", "Instant delivery"].map(
+              (t) => (
+                <span
+                  key={t}
+                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-white/65"
+                >
+                  {t}
+                </span>
+              ),
+            )}
+          </div>
         </div>
 
-        <h1 className="text-3xl font-bold text-foreground mb-6 uppercase tracking-wider">
-          ESTA EXTENSÃO FOI PIRATEADA
-        </h1>
-
-        <p className="text-white/70 text-base leading-relaxed mb-10 max-w-sm">
-          A chave utilizada nesta extensão foi bloqueada por uso não autorizado. Fale com o contato oficial abaixo para adquirir a versão original. FALAR COM O CONTATO OFICIAL (91) 98583-7992 ou no botão abaixo
-        </p>
-
-        <a
-          href="https://wa.me/91985837992"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="press flex h-14 w-full items-center justify-center rounded-[22px] bg-[#25D366] text-[15px] font-bold text-white shadow-[0_0_20px_rgba(37,211,102,0.3)] transition-all hover:scale-[1.02] active:scale-[0.98]"
-        >
-          CHAMAR NO WHATSAPP
-        </a>
-
-        <div className="mt-8 text-[11px] text-white/30 uppercase tracking-[0.2em]">
-          Acesso Bloqueado
+        <div className="w-full pb-8 flex flex-col gap-3">
+          <Link
+            to="/signup"
+            className="press flex h-14 w-full items-center justify-center rounded-[22px] bg-primary text-[15px] font-semibold text-primary-foreground glow-primary"
+          >
+            Get started
+          </Link>
+          <Link
+            to="/signin"
+            className="press flex h-14 w-full items-center justify-center rounded-[22px] border border-white/15 bg-transparent text-[15px] font-medium text-foreground"
+          >
+            I already have an account
+          </Link>
+          <p className="mt-2 text-center text-[11px] text-white/45">
+            By continuing you agree to our Terms & Privacy.
+          </p>
         </div>
       </div>
     </div>

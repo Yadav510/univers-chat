@@ -19,6 +19,14 @@ import {
   wrapFileKey,
 } from "@/lib/crypto";
 import { showNotification } from "@/lib/notifications";
+import {
+  cacheGet,
+  cacheSet,
+  outboxAdd,
+  useOnline,
+  useOutbox,
+} from "@/lib/offline";
+import { flushOutbox, SENT_EVENT, startSync } from "@/lib/sync";
 
 export const Route = createFileRoute("/chat/$chatId")({
   head: () => ({ meta: [{ title: "Chat — Univers." }] }),
@@ -62,6 +70,8 @@ type Message = {
   encrypted: boolean;
   reply_to_id: string | null;
   attachment: Attachment | null;
+  /** queued locally, not yet acknowledged by the server */
+  pending?: boolean;
 };
 
 type Reaction = { id: string; message_id: string; user_id: string; emoji: string };
@@ -253,8 +263,28 @@ function ChatPage() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length, otherTyping]);
 
-  const items = useMemo(() => groupForRender(messages), [messages]);
-  const messageMap = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
+  // Queued (offline) messages render as pending bubbles at the bottom.
+  const pending = useOutbox(chatId);
+  const allMessages = useMemo<Message[]>(
+    () => [
+      ...messages,
+      ...pending.map((p) => ({
+        id: p.id,
+        chat_id: p.chat_id,
+        sender_id: p.sender_id,
+        text: p.preview,
+        created_at: p.created_at,
+        encrypted: true,
+        reply_to_id: p.reply_to_id,
+        attachment: null,
+        pending: true,
+      })),
+    ],
+    [messages, pending],
+  );
+
+  const items = useMemo(() => groupForRender(allMessages), [allMessages]);
+  const messageMap = useMemo(() => new Map(allMessages.map((m) => [m.id, m])), [allMessages]);
 
   function broadcastTyping() {
     if (!user) return;
@@ -273,20 +303,37 @@ function ChatPage() {
     e.preventDefault();
     const body = draft.trim();
     if (!body || sending || !user) return;
-    setSending(true); setDraft(""); const reply = replyTo; setReplyTo(null);
+    setSending(true);
+    setDraft("");
+    const reply = replyTo;
+    setReplyTo(null);
     try {
-      if (!sharedKey) { toast.error("Secure channel not ready"); setDraft(body); setReplyTo(reply); return; }
-      const { ciphertext, nonce } = await encryptText(sharedKey, body);
-      const { error } = await supabase.from("messages").insert({
-        chat_id: chatId, sender_id: user.id, body: null,
-        ciphertext, nonce, reply_to_id: reply?.id ?? null,
-      });
-      if (error) { toast.error("Couldn't send: " + error.message); setDraft(body); setReplyTo(reply); }
-      else {
-        void supabase.from("typing_status").delete().eq("chat_id", chatId).eq("user_id", user.id);
+      if (!sharedKey) {
+        toast.error("Secure channel not ready");
+        setDraft(body);
+        setReplyTo(reply);
+        return;
       }
-    } finally { setSending(false); }
+      // Encrypt immediately, queue locally → the bubble appears instantly,
+      // online or offline. The sync loop delivers it as soon as there's network.
+      const { ciphertext, nonce } = await encryptText(sharedKey, body);
+      outboxAdd({
+        id: crypto.randomUUID(),
+        chat_id: chatId,
+        sender_id: user.id,
+        ciphertext,
+        nonce,
+        reply_to_id: reply?.id ?? null,
+        created_at: new Date().toISOString(),
+        preview: body,
+      });
+      void supabase.from("typing_status").delete().eq("chat_id", chatId).eq("user_id", user.id);
+      void flushOutbox();
+    } finally {
+      setSending(false);
+    }
   }
+
 
   async function sendFile(file: File) {
     if (!user || !sharedKey) { toast.error("Secure channel not ready"); return; }
@@ -575,8 +622,9 @@ function Bubble({
             <span className={`mt-1 flex items-center gap-1 text-[10px] ${mine ? "text-bubble-mine-foreground/70" : "text-foreground/45"}`}>
               {msg.encrypted && <LockMini />}
               {formatChatTime(msg.created_at)}
-              {mine && showReadCheck && <span className="ml-1">✓✓</span>}
-              {mine && !showReadCheck && <span className="ml-1">✓</span>}
+              {mine && msg.pending && <span className="ml-1" title="Queued — will send when back online">🕘</span>}
+              {mine && !msg.pending && showReadCheck && <span className="ml-1">✓✓</span>}
+              {mine && !msg.pending && !showReadCheck && <span className="ml-1">✓</span>}
             </span>
           )}
         </div>
