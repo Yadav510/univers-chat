@@ -283,20 +283,37 @@ function ChatPage() {
     e.preventDefault();
     const body = draft.trim();
     if (!body || sending || !user) return;
-    setSending(true); setDraft(""); const reply = replyTo; setReplyTo(null);
+    setSending(true);
+    setDraft("");
+    const reply = replyTo;
+    setReplyTo(null);
     try {
-      if (!sharedKey) { toast.error("Secure channel not ready"); setDraft(body); setReplyTo(reply); return; }
-      const { ciphertext, nonce } = await encryptText(sharedKey, body);
-      const { error } = await supabase.from("messages").insert({
-        chat_id: chatId, sender_id: user.id, body: null,
-        ciphertext, nonce, reply_to_id: reply?.id ?? null,
-      });
-      if (error) { toast.error("Couldn't send: " + error.message); setDraft(body); setReplyTo(reply); }
-      else {
-        void supabase.from("typing_status").delete().eq("chat_id", chatId).eq("user_id", user.id);
+      if (!sharedKey) {
+        toast.error("Secure channel not ready");
+        setDraft(body);
+        setReplyTo(reply);
+        return;
       }
-    } finally { setSending(false); }
+      // Encrypt immediately, queue locally → the bubble appears instantly,
+      // online or offline. The sync loop delivers it as soon as there's network.
+      const { ciphertext, nonce } = await encryptText(sharedKey, body);
+      outboxAdd({
+        id: crypto.randomUUID(),
+        chat_id: chatId,
+        sender_id: user.id,
+        ciphertext,
+        nonce,
+        reply_to_id: reply?.id ?? null,
+        created_at: new Date().toISOString(),
+        preview: body,
+      });
+      void supabase.from("typing_status").delete().eq("chat_id", chatId).eq("user_id", user.id);
+      void flushOutbox();
+    } finally {
+      setSending(false);
+    }
   }
+
 
   async function sendFile(file: File) {
     if (!user || !sharedKey) { toast.error("Secure channel not ready"); return; }
