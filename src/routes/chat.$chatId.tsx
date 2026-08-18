@@ -19,6 +19,14 @@ import {
   wrapFileKey,
 } from "@/lib/crypto";
 import { showNotification } from "@/lib/notifications";
+import {
+  cacheGet,
+  cacheSet,
+  outboxAdd,
+  useOnline,
+  useOutbox,
+} from "@/lib/offline";
+import { flushOutbox, SENT_EVENT, startSync } from "@/lib/sync";
 
 export const Route = createFileRoute("/chat/$chatId")({
   head: () => ({ meta: [{ title: "Chat — Univers." }] }),
