@@ -583,8 +583,9 @@ function Bubble({
             <span className={`mt-1 flex items-center gap-1 text-[10px] ${mine ? "text-bubble-mine-foreground/70" : "text-foreground/45"}`}>
               {msg.encrypted && <LockMini />}
               {formatChatTime(msg.created_at)}
-              {mine && showReadCheck && <span className="ml-1">✓✓</span>}
-              {mine && !showReadCheck && <span className="ml-1">✓</span>}
+              {mine && msg.pending && <span className="ml-1" title="Queued — will send when back online">🕘</span>}
+              {mine && !msg.pending && showReadCheck && <span className="ml-1">✓✓</span>}
+              {mine && !msg.pending && !showReadCheck && <span className="ml-1">✓</span>}
             </span>
           )}
         </div>
